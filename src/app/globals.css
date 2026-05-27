@@ -1,0 +1,87 @@
+@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #335cff;
+  --primary-light: #476cff;
+  --primary-dark: #2347e0;
+  --primary-bg: #eef2ff;
+  --dark: #0e121b;
+  --muted: #5c5c5c;
+  --border: #ebebeb;
+  --brand-navy: #060d26;
+  --brand-navy-mid: #0c1a4a;
+  --brand-yellow: #FFD600;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: "DM Sans", sans-serif;
+  color: #0e121b;
+  background-color: #f8f9ff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+  font-family: "Syne", sans-serif;
+}
+
+/* Shimmer skeleton */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #f0f0f0 25%,
+    #e8e8e8 50%,
+    #f0f0f0 75%
+  );
+  background-size: 400px 100%;
+  animation: shimmer 1.8s linear infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+
+/* Platform tab active indicator */
+.platform-tab-active {
+  border-bottom: 2px solid var(--primary);
+  color: var(--primary);
+}
+
+/* Content prose styles */
+.prose-content {
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Opacity 0 default for staggered animations */
+.animate-slide-up,
+.animate-slide-up-delay-1,
+.animate-slide-up-delay-2 {
+  opacity: 0;
+}
