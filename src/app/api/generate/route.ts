@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
-// Allow up to 60s on Hobby, 300s on Pro — Claude generation takes 20-45s per part
+// Extend function timeout — Netlify max sync is 26s, Vercel Hobby is 60s
 export const maxDuration = 60;
 import { jsonrepair } from "jsonrepair";
 import {

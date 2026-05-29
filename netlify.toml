@@ -1,0 +1,11 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Extend function timeout for Claude API calls (20-45s per generation part).
+# 26s is Netlify's maximum for synchronous functions.
+[functions]
+  timeout = 26
