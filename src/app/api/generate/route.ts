@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import {
   buildSystemPromptPart1,
@@ -8,17 +7,30 @@ import {
 } from "@/lib/prompts";
 import type { BlogPost } from "@/lib/types";
 
-// Run as an Edge Function — no hard wall-clock timeout, streaming keeps connection alive
+// Edge Function — no hard wall-clock timeout; streaming keeps the connection alive.
+// We call the Anthropic REST API directly via fetch (pure Fetch API, Deno-compatible)
+// instead of the SDK, which relies on Node.js internals that don't exist in edge runtime.
 export const runtime = "edge";
+
+const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  // Prevent Netlify CDN / nginx from buffering the event stream
+  "X-Accel-Buffering": "no",
+};
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder();
 
-  // Validate before opening the stream
-  if (!process.env.ANTHROPIC_API_KEY) {
+  // ── Validate before opening the stream ────────────────────────────────────
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
     return new Response(
       JSON.stringify({
-        error: "ANTHROPIC_API_KEY is not configured. Add it to .env.local.",
+        error: "ANTHROPIC_API_KEY is not configured. Add it to Netlify environment variables.",
       }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
@@ -49,34 +61,55 @@ export async function POST(request: Request) {
   const userPrompt =
     part === 2 ? buildUserPromptPart2(blog) : buildUserPromptPart1(blog);
 
-  // Create the Anthropic client inside the handler so the API key env var is
-  // resolved at request time (edge environment) rather than module init time.
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
+  // ── Open the SSE stream ────────────────────────────────────────────────────
   const stream = new ReadableStream({
     async start(controller) {
-      // Heartbeat comment every 8 s — resets any inactivity timeout and
-      // proves to the browser that the connection is still alive.
-      const heartbeat = setInterval(() => {
+      const send = (chunk: string) => {
         try {
-          controller.enqueue(encoder.encode(": ping\n\n"));
+          controller.enqueue(encoder.encode(chunk));
         } catch {
-          // Controller already closed — swallow
+          // controller already closed — swallow
         }
-      }, 8000);
+      };
+
+      // Immediate ping confirms the stream opened successfully
+      send(": stream-open\n\n");
+
+      // Keep-alive heartbeat every 8 s while Claude is thinking
+      const heartbeat = setInterval(() => send(": ping\n\n"), 8000);
 
       try {
-        const message = await client.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 8192,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
+        // ── Call Anthropic REST API directly (Fetch API — edge-safe) ──────────
+        const apiRes = await fetch(ANTHROPIC_API, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 8192,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userPrompt }],
+          }),
         });
 
-        const raw =
-          message.content[0].type === "text" ? message.content[0].text : "";
+        if (!apiRes.ok) {
+          const errText = await apiRes.text().catch(() => apiRes.statusText);
+          throw new Error(`Anthropic API error ${apiRes.status}: ${errText}`);
+        }
 
-        // Strip any accidental markdown code fences
+        const apiResult = (await apiRes.json()) as {
+          content: Array<{ type: string; text?: string }>;
+        };
+
+        const raw =
+          apiResult.content?.[0]?.type === "text"
+            ? (apiResult.content[0].text ?? "")
+            : "";
+
+        // Strip accidental markdown code fences
         const jsonStr = raw
           .replace(/^```(?:json)?\s*/i, "")
           .replace(/\s*```$/, "")
@@ -97,28 +130,21 @@ export async function POST(request: Request) {
           platforms: parsed.platforms,
         };
 
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(result)}\n\n`)
-        );
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        send(`data: ${JSON.stringify(result)}\n\n`);
+        send("data: [DONE]\n\n");
         controller.close();
       } catch (err) {
         console.error("Generate error:", err);
         const msg =
-          err instanceof Error &&
-          err.message.toLowerCase().includes("timeout")
+          err instanceof Error && err.message.toLowerCase().includes("timeout")
             ? "Generation timed out. Please try again — Claude is crafting a lot of content."
             : "Generation failed. Please check your API key and try again.";
 
+        send(`event: error\ndata: ${JSON.stringify({ error: msg })}\n\n`);
         try {
-          controller.enqueue(
-            encoder.encode(
-              `event: error\ndata: ${JSON.stringify({ error: msg })}\n\n`
-            )
-          );
           controller.close();
         } catch {
-          // Already closed
+          // already closed
         }
       } finally {
         clearInterval(heartbeat);
@@ -126,13 +152,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      // Prevent nginx / Netlify CDN from buffering the SSE stream
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }
