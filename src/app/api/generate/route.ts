@@ -7,9 +7,10 @@ import {
 } from "@/lib/prompts";
 import type { BlogPost } from "@/lib/types";
 
-// Edge Function — no hard wall-clock timeout; streaming keeps the connection alive.
-// We call the Anthropic REST API directly via fetch (pure Fetch API, Deno-compatible)
-// instead of the SDK, which relies on Node.js internals that don't exist in edge runtime.
+// Edge Function — avoids Netlify's hard serverless timeout.
+// We call Anthropic with stream:true so the response starts arriving within
+// 1-2 s and we forward pings on every token (~100 ms cadence), keeping the
+// SSE connection genuinely active throughout the 20-45 s generation window.
 export const runtime = "edge";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
@@ -18,19 +19,18 @@ const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
   "Cache-Control": "no-cache, no-transform",
   Connection: "keep-alive",
-  // Prevent Netlify CDN / nginx from buffering the event stream
   "X-Accel-Buffering": "no",
 };
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder();
 
-  // ── Validate before opening the stream ────────────────────────────────────
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return new Response(
       JSON.stringify({
-        error: "ANTHROPIC_API_KEY is not configured. Add it to Netlify environment variables.",
+        error:
+          "ANTHROPIC_API_KEY is not configured. Add it to Netlify environment variables.",
       }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
@@ -61,25 +61,24 @@ export async function POST(request: Request) {
   const userPrompt =
     part === 2 ? buildUserPromptPart2(blog) : buildUserPromptPart1(blog);
 
-  // ── Open the SSE stream ────────────────────────────────────────────────────
   const stream = new ReadableStream({
     async start(controller) {
       const send = (chunk: string) => {
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
-          // controller already closed — swallow
+          /* controller already closed */
         }
       };
 
-      // Immediate ping confirms the stream opened successfully
+      // Immediate ping confirms the stream is open before any API call
       send(": stream-open\n\n");
 
-      // Keep-alive heartbeat every 8 s while Claude is thinking
-      const heartbeat = setInterval(() => send(": ping\n\n"), 8000);
-
       try {
-        // ── Call Anthropic REST API directly (Fetch API — edge-safe) ──────────
+        // ── Ask Anthropic to stream its response ──────────────────────────────
+        // With stream:true, Anthropic sends SSE events starting within 1-2 s.
+        // We read each content_block_delta and forward a keep-alive ping to the
+        // client, so the connection stays active for the full generation window.
         const apiRes = await fetch(ANTHROPIC_API, {
           method: "POST",
           headers: {
@@ -90,27 +89,65 @@ export async function POST(request: Request) {
           body: JSON.stringify({
             model: "claude-sonnet-4-6",
             max_tokens: 8192,
+            stream: true,
             system: systemPrompt,
             messages: [{ role: "user", content: userPrompt }],
           }),
         });
 
-        if (!apiRes.ok) {
-          const errText = await apiRes.text().catch(() => apiRes.statusText);
-          throw new Error(`Anthropic API error ${apiRes.status}: ${errText}`);
+        if (!apiRes.ok || !apiRes.body) {
+          const errText = await apiRes.text().catch(() => String(apiRes.status));
+          throw new Error(`Anthropic API ${apiRes.status}: ${errText}`);
         }
 
-        const apiResult = (await apiRes.json()) as {
-          content: Array<{ type: string; text?: string }>;
-        };
+        // ── Pipe Anthropic's SSE stream, accumulating the full text ───────────
+        const reader = apiRes.body.getReader();
+        const dec = new TextDecoder();
+        let fullText = "";
+        let sseBuffer = "";
 
-        const raw =
-          apiResult.content?.[0]?.type === "text"
-            ? (apiResult.content[0].text ?? "")
-            : "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        // Strip accidental markdown code fences
-        const jsonStr = raw
+          sseBuffer += dec.decode(value, { stream: true });
+          const lines = sseBuffer.split("\n");
+          sseBuffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            const trimmed = line.trimEnd();
+            if (!trimmed.startsWith("data: ")) continue;
+
+            const payload = trimmed.slice(6).trim();
+            if (payload === "[DONE]") continue;
+
+            try {
+              const evt = JSON.parse(payload) as {
+                type: string;
+                delta?: { type: string; text?: string };
+              };
+
+              if (
+                evt.type === "content_block_delta" &&
+                evt.delta?.type === "text_delta" &&
+                evt.delta.text
+              ) {
+                fullText += evt.delta.text;
+                // Forward a ping on every token — resets Netlify's inactivity timer
+                send(": t\n\n");
+              }
+            } catch {
+              /* ignore malformed SSE lines */
+            }
+          }
+        }
+
+        if (!fullText.trim()) {
+          throw new Error("Claude returned an empty response.");
+        }
+
+        // ── Parse the accumulated JSON ────────────────────────────────────────
+        const jsonStr = fullText
           .replace(/^```(?:json)?\s*/i, "")
           .replace(/\s*```$/, "")
           .trim();
@@ -144,10 +181,8 @@ export async function POST(request: Request) {
         try {
           controller.close();
         } catch {
-          // already closed
+          /* already closed */
         }
-      } finally {
-        clearInterval(heartbeat);
       }
     },
   });
