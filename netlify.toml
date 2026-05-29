@@ -1,3 +1,9 @@
 [build]
   command = "npm run build"
   publish = ".next"
+
+# Extend the timeout for the Next.js server handler so per-platform Claude
+# calls (target: 4-8 s with Haiku) have a comfortable 26 s ceiling.
+# Requires Netlify Pro; free tier is capped at 10 s regardless.
+[functions."___netlify-server-handler"]
+  timeout = 26
