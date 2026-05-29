@@ -240,89 +240,91 @@ export function buildUserPrompt(blog: BlogPost): string {
 
 import type { PlatformKey } from "./types";
 
+// Specs are deliberately lean (target < 1,500 output tokens each) so every
+// call finishes in 5-8 s — safely inside Netlify's 10 s function limit.
 const PLATFORM_SPECS: Record<PlatformKey, string> = {
   linkedin: `
 ### LinkedIn specs
-- textPost: 1,300–1,500 characters. Open with one hook style: curiosity ("I was wrong about…"), story ("Last week…"), value ("How to X without Y:"), or contrarian ("Unpopular opinion:"). End with a question.
+- textPost: 600–900 characters. One strong hook (curiosity / story / value / contrarian). End with one question to drive comments.
 - hashtags: Exactly 4 hashtags
-- carouselSlides: Exactly 10 items, each formatted as "HEADLINE|Body text for this slide"
-- imageBrief: dimensions "1200x628px"
-- videoScript: duration "60-90 seconds", exactly 5 scenes
+- carouselSlides: Exactly 6 items, each as "HEADLINE|One sentence body"
+- imageBrief: dimensions "1200x628px" — concept, textOverlay, colorPalette, moodNotes, ctaText
+- videoScript: duration "60 seconds", exactly 3 scenes
 
-Return this JSON shape (nothing else):
+Return ONLY this JSON (no extra text):
 {
   "contentPillar": "educational",
   "data": {
     "textPost": "...",
-    "hashtags": ["hashtag1","hashtag2","hashtag3","hashtag4"],
-    "carouselSlides": ["HEADLINE|Body","HEADLINE|Body"],
+    "hashtags": ["h1","h2","h3","h4"],
+    "carouselSlides": ["HEADLINE|Body","HEADLINE|Body","HEADLINE|Body","HEADLINE|Body","HEADLINE|Body","HEADLINE|Body"],
     "imageBrief": { "dimensions": "1200x628px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
-    "videoScript": { "duration": "60-90 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+    "videoScript": { "duration": "60 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
   }
 }`,
 
   twitter: `
 ### X / Twitter specs
-- thread: Array of 6–10 tweets. Tweet 1 = hook (≤280 chars each). Final tweet = CTA linking to the blog.
+- thread: 5–7 tweets, each ≤280 characters. Tweet 1 = hook. Last tweet = CTA with blog URL.
 - hashtags: Exactly 2 hashtags
-- imageBrief: dimensions "1200x675px" (quote card style)
-- videoScript: duration "30-45 seconds", exactly 3 scenes
+- imageBrief: dimensions "1200x675px" — quote-card style
+- videoScript: duration "30 seconds", exactly 2 scenes
 
-Return this JSON shape (nothing else):
+Return ONLY this JSON (no extra text):
 {
   "contentPillar": "educational",
   "data": {
-    "thread": ["tweet1","tweet2"],
-    "hashtags": ["hashtag1","hashtag2"],
+    "thread": ["tweet1","tweet2","tweet3","tweet4","tweet5"],
+    "hashtags": ["h1","h2"],
     "imageBrief": { "dimensions": "1200x675px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
-    "videoScript": { "duration": "30-45 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+    "videoScript": { "duration": "30 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
   }
 }`,
 
   instagram: `
 ### Instagram specs
-- textPost: ≤2,200 characters. Conversational, relatable. Bold first line as hook. Use \\n for line breaks.
-- hashtags: Exactly 28 hashtags (mix broad accessibility + niche)
-- carouselSlides: Exactly 8 items, each formatted as "HEADLINE|Body text"
-- imageBrief: dimensions "1080x1080px"
-- videoScript: duration "15-30 seconds", exactly 4 scenes (Reel)
+- textPost: 600–900 characters. Conversational, relatable. First line = bold hook. Use \\n for line breaks.
+- hashtags: Exactly 15 hashtags (mix broad + niche accessibility tags)
+- carouselSlides: Exactly 5 items, each as "HEADLINE|One sentence body"
+- imageBrief: dimensions "1080x1080px" — concept, textOverlay, colorPalette, moodNotes, ctaText
+- videoScript: duration "15-20 seconds", exactly 2 scenes (Reel)
 
-Return this JSON shape (nothing else):
+Return ONLY this JSON (no extra text):
 {
   "contentPillar": "educational",
   "data": {
     "textPost": "...",
-    "hashtags": ["28 hashtags"],
-    "carouselSlides": ["HEADLINE|Body"],
+    "hashtags": ["h1","h2","h3","h4","h5","h6","h7","h8","h9","h10","h11","h12","h13","h14","h15"],
+    "carouselSlides": ["HEADLINE|Body","HEADLINE|Body","HEADLINE|Body","HEADLINE|Body","HEADLINE|Body"],
     "imageBrief": { "dimensions": "1080x1080px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
-    "videoScript": { "duration": "15-30 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+    "videoScript": { "duration": "15-20 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
   }
 }`,
 
   facebook: `
 ### Facebook specs
-- textPost: 400–600 words. Community-friendly, conversational. Ask 1-2 engaging questions. End with CTA linking to the blog.
+- textPost: 150–220 words. Community-friendly, conversational. One engaging question. End with CTA + blog URL.
 - hashtags: Exactly 3 hashtags
-- imageBrief: dimensions "1200x630px"
-- videoScript: duration "60 seconds", exactly 4 scenes
+- imageBrief: dimensions "1200x630px" — concept, textOverlay, colorPalette, moodNotes, ctaText
+- videoScript: duration "45 seconds", exactly 3 scenes
 
-Return this JSON shape (nothing else):
+Return ONLY this JSON (no extra text):
 {
   "contentPillar": "educational",
   "data": {
     "textPost": "...",
-    "hashtags": ["hashtag1","hashtag2","hashtag3"],
+    "hashtags": ["h1","h2","h3"],
     "imageBrief": { "dimensions": "1200x630px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
-    "videoScript": { "duration": "60 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+    "videoScript": { "duration": "45 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
   }
 }`,
 
   medium: `
 ### Medium specs
-- articleBody: 700–900 word repurposed article. Use ## for subheadings. SEO-optimised with accessibility keywords. Structure: intro → 3 main sections → conclusion with Webability CTA. Separate paragraphs with \\n\\n.
-- imageBrief: dimensions "1500x750px"
+- articleBody: 400–500 words. Use ## subheadings. SEO-friendly. Structure: intro → 2 main points → conclusion with Webability CTA. Separate paragraphs with \\n\\n.
+- imageBrief: dimensions "1500x750px" — concept, textOverlay, colorPalette, moodNotes, ctaText
 
-Return this JSON shape (nothing else):
+Return ONLY this JSON (no extra text):
 {
   "contentPillar": "educational",
   "data": {
@@ -333,10 +335,10 @@ Return this JSON shape (nothing else):
 
   substack: `
 ### Substack specs
-- newsletterSection: 300–500 words. Newsletter tone — direct, valuable, conversational. Feels like an insider tip. Include subscriber-forward CTA at the end. Separate paragraphs with \\n\\n.
-- imageBrief: dimensions "1200x630px"
+- newsletterSection: 180–250 words. Direct, valuable, newsletter tone. Ends with a subscriber CTA. Separate paragraphs with \\n\\n.
+- imageBrief: dimensions "1200x630px" — concept, textOverlay, colorPalette, moodNotes, ctaText
 
-Return this JSON shape (nothing else):
+Return ONLY this JSON (no extra text):
 {
   "contentPillar": "educational",
   "data": {
@@ -347,10 +349,10 @@ Return this JSON shape (nothing else):
 
   reddit: `
 ### Reddit specs
-- textPost: 200–300 words. Genuinely helpful and educational community post. ZERO promotional language. Do NOT mention Webability or any product by name. Write as a knowledgeable community member sharing insight.
-- subreddits: Exactly 3 subreddit names formatted as "r/name"
+- textPost: 120–180 words. Genuinely helpful community post. ZERO promotional language. No brand names. Written as a knowledgeable community member.
+- subreddits: Exactly 3 subreddit names as "r/name"
 
-Return this JSON shape (nothing else):
+Return ONLY this JSON (no extra text):
 {
   "contentPillar": "educational",
   "data": {

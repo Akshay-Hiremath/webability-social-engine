@@ -193,13 +193,22 @@ export default function GeneratePage() {
             body: JSON.stringify({ blog: blogData, platform }),
           });
 
-          const json = await res.json();
+          // Parse body safely — a Netlify timeout returns HTML or a non-standard JSON shape
+          const json = await res.json().catch(() => ({})) as Record<string, unknown>;
 
           if (!res.ok) {
-            throw new Error(json.error || `Failed to generate ${platform}`);
+            // Netlify timeout: { errorType, errorMessage } — not our { error } shape
+            const netlifyMsg = json.errorType === "TimeoutError"
+              ? `${PLATFORM_META[platform].label} timed out — please try again.`
+              : null;
+            throw new Error(
+              netlifyMsg ||
+              (json.error as string | undefined) ||
+              `Failed to generate ${PLATFORM_META[platform].label}. Please try again.`
+            );
           }
 
-          if (json.contentPillar) contentPillar = json.contentPillar;
+          if (json.contentPillar) contentPillar = json.contentPillar as string;
 
           acc = { ...acc, [platform]: json.data };
           accRef.current = acc;
