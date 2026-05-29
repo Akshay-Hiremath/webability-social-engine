@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+
+// Allow up to 60s on Hobby, 300s on Pro — Claude generation takes 20-45s per part
+export const maxDuration = 60;
 import { jsonrepair } from "jsonrepair";
 import {
   buildSystemPromptPart1,
@@ -71,9 +74,10 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     console.error("Generate error:", err);
-    return NextResponse.json(
-      { error: "Generation failed. Please check your API key and try again." },
-      { status: 500 }
-    );
+    const message =
+      err instanceof Error && err.message.toLowerCase().includes("timeout")
+        ? "Generation timed out. Please try again — Claude is crafting a lot of content."
+        : "Generation failed. Please check your API key and try again.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

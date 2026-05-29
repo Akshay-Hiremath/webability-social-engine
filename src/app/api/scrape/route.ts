@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 
+export const maxDuration = 30; // blog scraping should be well within 30s
+
 const BLOG_BASE = "https://www.webability.io";
 const EXCLUDED_SLUGS = ["archive", "category", "tag", "/page/", "index", "sitemap"];
 
