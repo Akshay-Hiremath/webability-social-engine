@@ -18,6 +18,73 @@ import { formatDate, generateId, PLATFORM_META, PLATFORM_ORDER } from "@/lib/uti
 
 type Stage = "idle" | "generating" | "awaiting_continuation" | "done" | "error";
 
+/**
+ * Read a Server-Sent Events stream from the /api/generate route.
+ * Ignores heartbeat comments (": ping"), waits for a `data:` line
+ * containing JSON, and returns it. Throws on `event: error` payloads
+ * or if the stream closes before a result arrives.
+ */
+async function readSSE(res: Response): Promise<GeneratedSuite> {
+  if (!res.body) throw new Error("Response has no body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    // Split on newlines, keep the last (possibly incomplete) chunk in buffer
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trimEnd();
+
+      // Blank line = end of SSE event block — reset event type
+      if (trimmed === "") {
+        currentEvent = "";
+        continue;
+      }
+      // Heartbeat / comment lines start with ":"
+      if (trimmed.startsWith(":")) continue;
+
+      if (trimmed.startsWith("event:")) {
+        currentEvent = trimmed.slice(6).trim();
+        continue;
+      }
+
+      if (trimmed.startsWith("data:")) {
+        const payload = trimmed.slice(5).trim();
+
+        // End-of-stream sentinel — we already returned the data above
+        if (payload === "[DONE]") {
+          reader.cancel();
+          throw new Error("Stream ended without data");
+        }
+
+        const parsed = JSON.parse(payload) as Record<string, unknown>;
+
+        if (currentEvent === "error") {
+          reader.cancel();
+          throw new Error(
+            (parsed.error as string | undefined) || "Generation failed"
+          );
+        }
+
+        // Success — stop reading and return
+        reader.cancel();
+        return parsed as unknown as GeneratedSuite;
+      }
+    }
+  }
+
+  throw new Error("Stream ended without data");
+}
+
 const PART1_KEYS: PlatformKey[] = ["linkedin", "twitter", "instagram"];
 const PART2_KEYS: PlatformKey[] = ["facebook", "medium", "substack", "reddit"];
 
@@ -173,8 +240,12 @@ export default function GeneratePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ blog: blogData, part: 1 }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Generation failed");
+      // Non-2xx before the stream opens (validation errors) are plain JSON
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Generation failed" }));
+        throw new Error(errData.error || "Generation failed");
+      }
+      const data = await readSSE(res);
       setPartialSuite(data);
       setStage("awaiting_continuation");
     } catch (err) {
@@ -194,8 +265,12 @@ export default function GeneratePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ blog: blogData, part: 2 }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Generation failed");
+        // Non-2xx before the stream opens (validation errors) are plain JSON
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: "Generation failed" }));
+          throw new Error(errData.error || "Generation failed");
+        }
+        const data = await readSSE(res);
 
         const merged: GeneratedSuite = {
           ...partial,
