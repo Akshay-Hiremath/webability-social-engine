@@ -233,3 +233,158 @@ export function buildSystemPrompt(): string {
 export function buildUserPrompt(blog: BlogPost): string {
   return buildUserPromptPart1(blog);
 }
+
+// ─── Per-platform prompts (one platform per API call) ─────────────────────────
+// Each call targets a single platform, keeping response time to 4-8 s so
+// it fits comfortably within Netlify's serverless function timeout.
+
+import type { PlatformKey } from "./types";
+
+const PLATFORM_SPECS: Record<PlatformKey, string> = {
+  linkedin: `
+### LinkedIn specs
+- textPost: 1,300–1,500 characters. Open with one hook style: curiosity ("I was wrong about…"), story ("Last week…"), value ("How to X without Y:"), or contrarian ("Unpopular opinion:"). End with a question.
+- hashtags: Exactly 4 hashtags
+- carouselSlides: Exactly 10 items, each formatted as "HEADLINE|Body text for this slide"
+- imageBrief: dimensions "1200x628px"
+- videoScript: duration "60-90 seconds", exactly 5 scenes
+
+Return this JSON shape (nothing else):
+{
+  "contentPillar": "educational",
+  "data": {
+    "textPost": "...",
+    "hashtags": ["hashtag1","hashtag2","hashtag3","hashtag4"],
+    "carouselSlides": ["HEADLINE|Body","HEADLINE|Body"],
+    "imageBrief": { "dimensions": "1200x628px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
+    "videoScript": { "duration": "60-90 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+  }
+}`,
+
+  twitter: `
+### X / Twitter specs
+- thread: Array of 6–10 tweets. Tweet 1 = hook (≤280 chars each). Final tweet = CTA linking to the blog.
+- hashtags: Exactly 2 hashtags
+- imageBrief: dimensions "1200x675px" (quote card style)
+- videoScript: duration "30-45 seconds", exactly 3 scenes
+
+Return this JSON shape (nothing else):
+{
+  "contentPillar": "educational",
+  "data": {
+    "thread": ["tweet1","tweet2"],
+    "hashtags": ["hashtag1","hashtag2"],
+    "imageBrief": { "dimensions": "1200x675px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
+    "videoScript": { "duration": "30-45 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+  }
+}`,
+
+  instagram: `
+### Instagram specs
+- textPost: ≤2,200 characters. Conversational, relatable. Bold first line as hook. Use \\n for line breaks.
+- hashtags: Exactly 28 hashtags (mix broad accessibility + niche)
+- carouselSlides: Exactly 8 items, each formatted as "HEADLINE|Body text"
+- imageBrief: dimensions "1080x1080px"
+- videoScript: duration "15-30 seconds", exactly 4 scenes (Reel)
+
+Return this JSON shape (nothing else):
+{
+  "contentPillar": "educational",
+  "data": {
+    "textPost": "...",
+    "hashtags": ["28 hashtags"],
+    "carouselSlides": ["HEADLINE|Body"],
+    "imageBrief": { "dimensions": "1080x1080px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
+    "videoScript": { "duration": "15-30 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+  }
+}`,
+
+  facebook: `
+### Facebook specs
+- textPost: 400–600 words. Community-friendly, conversational. Ask 1-2 engaging questions. End with CTA linking to the blog.
+- hashtags: Exactly 3 hashtags
+- imageBrief: dimensions "1200x630px"
+- videoScript: duration "60 seconds", exactly 4 scenes
+
+Return this JSON shape (nothing else):
+{
+  "contentPillar": "educational",
+  "data": {
+    "textPost": "...",
+    "hashtags": ["hashtag1","hashtag2","hashtag3"],
+    "imageBrief": { "dimensions": "1200x630px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." },
+    "videoScript": { "duration": "60 seconds", "hook": "...", "scenes": [{ "timeCode": "...", "visual": "...", "voiceover": "...", "textOverlay": "..." }], "cta": "..." }
+  }
+}`,
+
+  medium: `
+### Medium specs
+- articleBody: 700–900 word repurposed article. Use ## for subheadings. SEO-optimised with accessibility keywords. Structure: intro → 3 main sections → conclusion with Webability CTA. Separate paragraphs with \\n\\n.
+- imageBrief: dimensions "1500x750px"
+
+Return this JSON shape (nothing else):
+{
+  "contentPillar": "educational",
+  "data": {
+    "articleBody": "...",
+    "imageBrief": { "dimensions": "1500x750px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." }
+  }
+}`,
+
+  substack: `
+### Substack specs
+- newsletterSection: 300–500 words. Newsletter tone — direct, valuable, conversational. Feels like an insider tip. Include subscriber-forward CTA at the end. Separate paragraphs with \\n\\n.
+- imageBrief: dimensions "1200x630px"
+
+Return this JSON shape (nothing else):
+{
+  "contentPillar": "educational",
+  "data": {
+    "newsletterSection": "...",
+    "imageBrief": { "dimensions": "1200x630px", "concept": "...", "textOverlay": "...", "colorPalette": "...", "moodNotes": "...", "ctaText": "..." }
+  }
+}`,
+
+  reddit: `
+### Reddit specs
+- textPost: 200–300 words. Genuinely helpful and educational community post. ZERO promotional language. Do NOT mention Webability or any product by name. Write as a knowledgeable community member sharing insight.
+- subreddits: Exactly 3 subreddit names formatted as "r/name"
+
+Return this JSON shape (nothing else):
+{
+  "contentPillar": "educational",
+  "data": {
+    "textPost": "...",
+    "subreddits": ["r/accessibility","r/webdev","r/ux"]
+  }
+}`,
+};
+
+export function buildPlatformSystemPrompt(platform: PlatformKey): string {
+  return `${JSON_RULES}
+
+You are an expert social media strategist for Webability (www.webability.io), a digital accessibility SaaS platform.
+${WEBABILITY_CONTEXT}
+${IMAGE_BRIEF_FORMAT}
+${VIDEO_SCRIPT_FORMAT}
+
+## Your Task
+Generate content for ONE platform only: ${platform.toUpperCase()}.
+
+${PLATFORM_SPECS[platform]}`;
+}
+
+export function buildPlatformUserPrompt(blog: BlogPost, platform: PlatformKey): string {
+  return `Generate ${platform} content for this Webability blog post.
+
+Blog Title: ${blog.title}
+Blog URL: ${blog.url}
+Published: ${blog.publishedAt}
+
+Blog Content:
+---
+${blog.content.substring(0, 6000)}
+---
+
+Return the JSON object for ${platform} only. Nothing else.`;
+}
